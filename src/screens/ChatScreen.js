@@ -126,29 +126,51 @@ export default function ChatScreen() {
 
   const startVoiceRecording = async () => {
     try {
-      await VoiceService.startRecording();
-      setIsRecording(true);
-      setRecordingDuration(0);
+      // Ask user for permission before starting recording
+      Alert.alert(
+        'Voice Recording',
+        'Allow JARVIS to access your microphone for voice recording?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Allow',
+            onPress: async () => {
+              try {
+                await VoiceService.startRecording();
+                setIsRecording(true);
+                setRecordingDuration(0);
 
-      // Animate microphone
-      micScale.value = withRepeat(
-        withSequence(
-          withSpring(1.2),
-          withSpring(1.0)
-        ),
-        -1,
-        true
+                // Animate microphone
+                micScale.value = withRepeat(
+                  withSequence(
+                    withSpring(1.2),
+                    withSpring(1.0)
+                  ),
+                  -1,
+                  true
+                );
+
+                // Update duration
+                recordingInterval.current = setInterval(async () => {
+                  const duration = await VoiceService.getRecordingDuration();
+                  setRecordingDuration(Math.floor(duration));
+                }, 100);
+
+              } catch (error) {
+                console.error('Recording error:', error);
+                Alert.alert('Error', 'Failed to start recording: ' + error.message);
+              }
+            },
+          },
+        ],
+        { cancelable: false }
       );
-
-      // Update duration
-      recordingInterval.current = setInterval(async () => {
-        const duration = await VoiceService.getRecordingDuration();
-        setRecordingDuration(Math.floor(duration));
-      }, 100);
-
     } catch (error) {
-      console.error('Recording error:', error);
-      Alert.alert('Error', 'Failed to start recording: ' + error.message);
+      console.error('Permission error:', error);
+      Alert.alert('Error', 'Failed to request permission: ' + error.message);
     }
   };
 

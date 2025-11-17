@@ -1,19 +1,19 @@
 /**
- * Voice Service - Audio recording and playback
+ * Voice Service - Audio recording and playbook
  */
-import { AudioRecorder, AudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 
 class VoiceService {
   constructor() {
-    this.recorder = null;
-    this.player = null;
+    this.recording = null;
+    this.sound = null;
   }
 
   async requestPermissions() {
     try {
-      const permission = await AudioRecorder.requestPermissionsAsync();
-      if (!permission.granted) {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
         throw new Error('Microphone permission not granted');
       }
       return true;
@@ -27,48 +27,36 @@ class VoiceService {
     try {
       await this.requestPermissions();
       
-      this.recorder = new AudioRecorder({
-        android: {
-          extension: '.m4a',
-          outputFormat: 'mpeg_4',
-          audioEncoder: 'aac',
-          sampleRate: 44100,
-          numberOfChannels: 2,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.m4a',
-          outputFormat: 'mpeg_4',
-          audioQuality: 'max',
-          sampleRate: 44100,
-          numberOfChannels: 2,
-          bitRate: 128000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
       });
 
-      await this.recorder.record();
-      return this.recorder;
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      this.recording = recording;
+      return recording;
     } catch (error) {
       console.error('Failed to start recording:', error);
+      if (error.message.includes('permission') || error.message.includes('denied')) {
+        throw new Error('Microphone permission denied. Please enable microphone access in settings.');
+      }
       throw error;
     }
   }
 
   async stopRecording() {
     try {
-      if (!this.recorder) {
+      if (!this.recording) {
         throw new Error('No active recording');
       }
 
-      const uri = await this.recorder.stop();
-      this.recorder = null;
+      await this.recording.stopAndUnloadAsync();
+      const uri = this.recording.getURI();
+      this.recording = null;
 
       return uri;
     } catch (error) {
@@ -78,9 +66,9 @@ class VoiceService {
   }
 
   async getRecordingDuration() {
-    if (!this.recorder) return 0;
-    const status = await this.recorder.getStatus();
-    return status.durationMillis ? status.durationMillis / 1000 : 0;
+    if (!this.recording) return 0;
+    const status = await this.recording.getStatusAsync();
+    return status.durationMillis / 1000;
   }
 
   async convertAudioToBase64(uri) {
@@ -98,29 +86,26 @@ class VoiceService {
   async playAudio(base64Audio) {
     try {
       // Stop any existing playback
-      if (this.player) {
-        await this.player.pause();
-        this.player = null;
+      if (this.sound) {
+        await this.sound.unloadAsync();
       }
 
-      // Create a temporary file for the base64 audio
-      const tempUri = FileSystem.documentDirectory + 'temp_audio.mp3';
-      await FileSystem.writeAsStringAsync(tempUri, base64Audio, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Create sound from base64
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: `data:audio/mp3;base64,${base64Audio}` },
+        { shouldPlay: true }
+      );
 
-      // Create and play the audio
-      this.player = new AudioPlayer(tempUri);
-      await this.player.play();
+      this.sound = sound;
 
       // Clean up after playback
-      this.player.addListener('playbackStatusUpdate', async (status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          await FileSystem.deleteAsync(tempUri, { idempotent: true });
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          sound.unloadAsync();
         }
       });
 
-      return this.player;
+      return sound;
     } catch (error) {
       console.error('Failed to play audio:', error);
       throw error;
@@ -129,9 +114,10 @@ class VoiceService {
 
   async stopPlayback() {
     try {
-      if (this.player) {
-        await this.player.pause();
-        this.player = null;
+      if (this.sound) {
+        await this.sound.stopAsync();
+        await this.sound.unloadAsync();
+        this.sound = null;
       }
     } catch (error) {
       console.error('Failed to stop playback:', error);
@@ -139,21 +125,13 @@ class VoiceService {
   }
 
   async cleanup() {
-    if (this.recorder) {
-      try {
-        await this.recorder.stop();
-      } catch (error) {
-        // Recorder might already be stopped
-      }
-      this.recorder = null;
+    if (this.recording) {
+      await this.recording.stopAndUnloadAsync();
+      this.recording = null;
     }
-    if (this.player) {
-      try {
-        await this.player.pause();
-      } catch (error) {
-        // Player might already be stopped
-      }
-      this.player = null;
+    if (this.sound) {
+      await this.sound.unloadAsync();
+      this.sound = null;
     }
   }
 }
