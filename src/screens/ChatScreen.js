@@ -46,7 +46,7 @@ export default function ChatScreen() {
 
   const initializeChat = async () => {
     const id = await StorageService.getUserId();
-    setUserId(id);
+    setUserId("user_123"); // Temporary hardcoded ID for testing
     
     const webSearch = await StorageService.getWebSearchEnabled();
     setWebSearchEnabled(webSearch);
@@ -56,6 +56,15 @@ export default function ChatScreen() {
     
     const history = await StorageService.getConversationHistory();
     setMessages(history);
+    
+    // Test API connection
+    console.log("Testing API connection on startup...");
+    const testResult = await APIService.testConnection();
+    if (testResult.success) {
+      console.log("✅ API connection test successful");
+    } else {
+      console.error("❌ API connection test failed:", testResult.error);
+    }
   };
 
   const sendMessage = async () => {

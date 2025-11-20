@@ -20,7 +20,7 @@ import {
 import StorageService from '../services/storage';
 import APIService from '../services/api';
 import { colors, spacing, typography } from '../theme';
-import { DEFAULT_API_URL } from '../config/api';
+import { DEFAULT_API_URL, PRODUCTION_API_URL, LOCAL_API_URL } from '../config/api';
 
 export default function SettingsScreen() {
   const [userId, setUserId] = useState('');
@@ -144,6 +144,25 @@ export default function SettingsScreen() {
               {connectionStatus === 'testing' && 'Testing...'}
               {connectionStatus === 'unknown' && 'Not Tested'}
             </Text>
+          </View>
+
+          <View style={styles.presetButtons}>
+            <Button
+              mode={apiUrl === PRODUCTION_API_URL ? "contained" : "outlined"}
+              onPress={() => setApiUrl(PRODUCTION_API_URL)}
+              style={styles.presetButton}
+              compact
+            >
+              Production
+            </Button>
+            <Button
+              mode={apiUrl === LOCAL_API_URL ? "contained" : "outlined"}
+              onPress={() => setApiUrl(LOCAL_API_URL)}
+              style={styles.presetButton}
+              compact
+            >
+              Local
+            </Button>
           </View>
 
           <TextInput
@@ -337,6 +356,14 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: spacing.md,
     backgroundColor: colors.surfaceVariant,
+  },
+  presetButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  presetButton: {
+    flex: 1,
   },
   buttonRow: {
     flexDirection: 'row',

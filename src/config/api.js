@@ -2,9 +2,14 @@
  * API Configuration
  */
 
-// Change this to your computer's local IP address when testing on physical device
-// Find your IP: Run `ipconfig getifaddr en0` on Mac or `ipconfig` on Windows
-export const DEFAULT_API_URL = 'http://localhost:8000';
+// Production API URL
+export const PRODUCTION_API_URL = 'http://159.65.159.82:8001';
+
+// Local development API URL
+export const LOCAL_API_URL = 'http://159.65.159.82:8001';
+
+// Default to production API
+export const DEFAULT_API_URL = PRODUCTION_API_URL;
 
 export const API_ENDPOINTS = {
   CHAT: '/api/chat/',
