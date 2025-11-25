@@ -219,22 +219,70 @@ class APIService {
     }
   }
 
-  // Call intent classification endpoint
-  async classifyIntent(userId, text) {
+  // Firebase Notification Methods
+  
+  /**
+   * Register device FCM token with backend
+   */
+  async registerDeviceToken(deviceInfo) {
     try {
       await this.ensureInitialized();
-
-      const requestData = {
-        user_id: userId || 'user_123',
-        text: text,
-      };
-
-      console.log('Calling intent classify API with:', requestData);
-      const response = await this.client.post(API_ENDPOINTS.INTENT_CLASSIFY, requestData);
-      console.log('Intent API response:', response.data);
+      
+      console.log('📡 Registering FCM token with backend...');
+      const response = await this.client.post('/firebase/register-device', deviceInfo);
+      console.log('✅ Device registration response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Intent classify error:', error);
+      console.error('❌ Device registration error:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Schedule reminder via Firebase push notification
+   */
+  async scheduleFirebaseReminder(reminderData) {
+    try {
+      await this.ensureInitialized();
+      
+      console.log('📅 Scheduling Firebase reminder...');
+      const response = await this.client.post('/firebase/schedule-reminder', reminderData);
+      console.log('✅ Firebase reminder scheduled:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Firebase reminder scheduling error:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Cancel Firebase reminder
+   */
+  async cancelFirebaseReminder(cancelData) {
+    try {
+      await this.ensureInitialized();
+      
+      console.log('🗑️ Canceling Firebase reminder...');
+      const response = await this.client.post('/firebase/cancel-reminder', cancelData);
+      console.log('✅ Firebase reminder canceled:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Firebase reminder cancellation error:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get Firebase reminder status
+   */
+  async getFirebaseReminderStatus(reminderId) {
+    try {
+      await this.ensureInitialized();
+      
+      const response = await this.client.get(`/firebase/reminder-status/${reminderId}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Firebase reminder status error:', error);
       throw this.handleError(error);
     }
   }

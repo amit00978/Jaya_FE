@@ -23,13 +23,12 @@ import {
 } from 'react-native-paper';
 import Markdown from 'react-native-markdown-display';
 import Animated, { FadeIn, FadeOut, useSharedValue, useAnimatedStyle, withSpring, withRepeat, withSequence } from 'react-native-reanimated';
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as IntentLauncher from 'expo-intent-launcher';
 import APIService from '../services/api';
 import StorageService from '../services/storage';
 import VoiceService from '../services/voice';
-import { parseReminderTime, scheduleNotification } from '../utils/reminderUtils';
+import reminderService from '../services/reminderService';
 import { colors, spacing, typography } from '../theme';
 
 export default function ChatScreen() {
@@ -47,63 +46,21 @@ export default function ChatScreen() {
 
   useEffect(() => {
     initializeChat();
-    setupNotifications();
+    setupFirebaseNotifications();
   }, []);
 
-  const setupNotifications = async () => {
+  const setupFirebaseNotifications = async () => {
     try {
-      // Check if we're running in Expo Go
-      const isExpoGo = __DEV__ && !Device.isDevice;
+      console.log('🔥 Setting up Firebase notifications...');
+      const success = await reminderService.initialize();
       
-      if (isExpoGo) {
-        console.warn('⚠️ Running in Expo Go - Notifications are limited');
-        return;
-      }
-
-      // Configure notification behavior
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSet1Badge: false,
-        }),
-      });
-
-      // Request permissions
-      if (Device.isDevice) {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-        
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-        
-        if (finalStatus !== 'granted') {
-          Alert.alert(
-            'Permission Required',
-            'Please enable notifications in Settings to receive reminders.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() }
-            ]
-          );
-          return;
-        }
-
-        // For Android, configure notification channel
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'JARVIS Reminders',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF231F7C',
-            sound: 'default',
-          });
-        }
+      if (success) {
+        console.log('✅ Firebase notifications ready');
+      } else {
+        console.warn('⚠️ Firebase notifications failed to initialize');
       }
     } catch (error) {
-      console.error('Error setting up notifications:', error);
+      console.error('❌ Firebase setup error:', error);
     }
   };
 
@@ -130,103 +87,71 @@ export default function ChatScreen() {
     }
   };
 
-  // New method to handle alarm/reminder setting
+  // Enhanced method to handle alarm/reminder setting with Firebase
   const handleAlarmReminder = async (userMessage, intentResult) => {
     try {
-      console.log(`🔔 Detected REMINDER intent with time: ${intentResult.time}`);
+      console.log(`🔔 Processing Firebase reminder with time: ${intentResult.time}`);
       
-      // Parse the time string to create a proper Date object
-      const reminderTime = parseReminderTime(intentResult.time);
-      if (!reminderTime) {
-        throw new Error('Invalid time format received');
-      }
-
-      // Check if the reminder time is in the future
-      if (reminderTime <= new Date()) {
+      // Use the new reminder service
+      const result = await reminderService.scheduleReminder(userMessage, intentResult);
+      
+      if (result.success) {
+        // Show success alert
         Alert.alert(
-          'Invalid Time',
-          'The reminder time must be in the future. Please try again with a future time.',
+          '🔥 Firebase Reminder Set',
+          result.message,
+          [{ text: 'Awesome!' }]
+        );
+
+        // Create assistant response message
+        const assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          text: `🔥 **Firebase Reminder Scheduled!**\n\n${result.message}\n\n✨ **Method**: ${result.method}\n\n🚀 *You'll receive a reliable push notification even if the app is closed!*`,
+          isUser: false,
+          timestamp: new Date().toISOString(),
+          isFirebaseReminder: true,
+          reminderMethod: result.method,
+          reminderScheduled: true,
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        
+        // Save to storage
+        await StorageService.addMessageToHistory(userMessage);
+        await StorageService.addMessageToHistory(assistantMessage);
+
+      } else {
+        // Handle fallback case
+        Alert.alert(
+          '⚠️ Reminder Saved Locally',
+          result.message,
           [{ text: 'OK' }]
         );
-        return;
+
+        const assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          text: `💾 **Reminder Saved Locally**\n\n${result.message}\n\n� *To get push notifications, make sure Firebase is properly configured in your backend.*`,
+          isUser: false,
+          timestamp: new Date().toISOString(),
+          isLocalReminder: true,
+          reminderMethod: result.method,
+          reminderScheduled: false,
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        
+        // Save to storage
+        await StorageService.addMessageToHistory(userMessage);
+        await StorageService.addMessageToHistory(assistantMessage);
       }
-
-      // Check if we're running in Expo Go
-      const isExpoGo = __DEV__ && !Device.isDevice;
-
-      // Save reminder locally
-      const reminderData = {
-        id: Date.now().toString(),
-        text: `Reminder: ${userMessage.text}`,
-        time: reminderTime.toISOString(),
-        originalText: userMessage.text,
-        confidence: intentResult.confidence,
-        scheduled: false,
-        notificationId: null,
-      };
-
-      await StorageService.saveLocalReminder(reminderData);
-
-      // Schedule notification
-      let notificationId = null;
-      let scheduleSuccess = false;
-
-      try {
-        if (Device.isDevice && !isExpoGo) {
-          notificationId = await scheduleNotification(reminderData);
-          scheduleSuccess = true;
-          
-          // Update reminder with notification ID
-          if (notificationId) {
-            reminderData.notificationId = notificationId;
-            reminderData.scheduled = true;
-            await StorageService.updateLocalReminder(reminderData.id, reminderData);
-          }
-        } else if (isExpoGo) {
-          console.warn('⚠️ Notifications not supported in Expo Go - reminder saved locally only');
-        }
-      } catch (notificationError) {
-        console.error('Failed to schedule notification:', notificationError);
-        scheduleSuccess = false;
-      }
-
-      // Show success alert
-      const alertTitle = scheduleSuccess ? '⏰ Reminder Set & Scheduled' : '⏰ Reminder Saved';
-      const alertMessage = scheduleSuccess 
-        ? `✅ I'll remind you: "${userMessage.text}" at ${reminderTime.toLocaleString()}\n\n🔔 Notification scheduled successfully!`
-        : isExpoGo
-        ? `✅ I've saved your reminder: "${userMessage.text}" for ${reminderTime.toLocaleString()}\n\n⚠️ Note: Running in Expo Go - notifications are not supported. Use a development build for full notification functionality.`
-        : `✅ I've saved your reminder: "${userMessage.text}" for ${reminderTime.toLocaleString()}\n\n⚠️ Note: Notification scheduling failed, but the reminder is saved.`;
-
-      Alert.alert(alertTitle, alertMessage, [{ text: 'OK' }]);
-
-      // Create assistant response message
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        text: scheduleSuccess 
-          ? `✅ **Reminder set and scheduled for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n🔔 **You'll receive a notification at the scheduled time!**\n\n${Platform.OS === 'ios' ? '*For iOS: Make sure notifications are enabled in Settings > Notifications > Your App*' : '*For Android: Notification scheduled and will appear at the set time*'}`
-          : isExpoGo
-          ? `✅ **Reminder saved for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n⚠️ *Note: You're using Expo Go which doesn't support notifications. To get real push notifications, create a development build using:*\n\n\`npx expo run:android\` or \`npx expo run:ios\``
-          : `✅ **Reminder saved for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n⚠️ *Note: Notification scheduling failed, but the reminder is saved locally.*`,
-        isUser: false,
-        timestamp: new Date().toISOString(),
-        isLocalReminder: true,
-        reminderScheduled: scheduleSuccess,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-      
-      // Save to storage
-      await StorageService.addMessageToHistory(userMessage);
-      await StorageService.addMessageToHistory(assistantMessage);
 
     } catch (reminderError) {
-      console.error('Failed to save reminder:', reminderError);
+      console.error('❌ Firebase reminder failed:', reminderError);
       
       // Show error alert
       Alert.alert(
         'Reminder Failed',
-        `Sorry, I couldn't set your reminder: ${reminderError.message}`,
+        `Sorry, I couldn't set your reminder: ${reminderError.message}\n\nPlease check:\n• Internet connection\n• Firebase configuration\n• Backend server status`,
         [{ text: 'OK' }]
       );
       
@@ -325,6 +250,27 @@ export default function ChatScreen() {
     const newValue = !webSearchEnabled;
     setWebSearchEnabled(newValue);
     await StorageService.setWebSearchEnabled(newValue);
+  };
+
+  // Debug function for testing notifications
+  const debugReminders = async () => {
+    try {
+      const debugInfo = await debugNotifications();
+      console.log('🔧 Debug info:', debugInfo);
+      
+      Alert.alert(
+        'Debug Info',
+        `Device: ${debugInfo.device ? 'Physical' : 'Simulator'}
+Permissions: ${debugInfo.permissions ? 'Granted' : 'Not granted'}
+Scheduled: ${debugInfo.scheduledCount} notifications`,
+        [
+          { text: 'Test Notification', onPress: () => testNotification() },
+          { text: 'OK', style: 'default' }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Debug Error', error.message);
+    }
   };
 
   const startVoiceRecording = async () => {
@@ -493,6 +439,15 @@ export default function ChatScreen() {
             >
               🔍 Web Search
             </Chip>
+            {__DEV__ && (
+              <IconButton
+                icon="bug"
+                size={20}
+                iconColor={colors.secondary}
+                onPress={debugReminders}
+                style={{ margin: 0 }}
+              />
+            )}
             <IconButton
               icon="delete-outline"
               size={24}
