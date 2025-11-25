@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import {
   TextInput,
@@ -22,9 +23,13 @@ import {
 } from 'react-native-paper';
 import Markdown from 'react-native-markdown-display';
 import Animated, { FadeIn, FadeOut, useSharedValue, useAnimatedStyle, withSpring, withRepeat, withSequence } from 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import * as IntentLauncher from 'expo-intent-launcher';
 import APIService from '../services/api';
 import StorageService from '../services/storage';
 import VoiceService from '../services/voice';
+import { parseReminderTime, scheduleNotification } from '../utils/reminderUtils';
 import { colors, spacing, typography } from '../theme';
 
 export default function ChatScreen() {
@@ -42,7 +47,65 @@ export default function ChatScreen() {
 
   useEffect(() => {
     initializeChat();
+    setupNotifications();
   }, []);
+
+  const setupNotifications = async () => {
+    try {
+      // Check if we're running in Expo Go
+      const isExpoGo = __DEV__ && !Device.isDevice;
+      
+      if (isExpoGo) {
+        console.warn('⚠️ Running in Expo Go - Notifications are limited');
+        return;
+      }
+
+      // Configure notification behavior
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSet1Badge: false,
+        }),
+      });
+
+      // Request permissions
+      if (Device.isDevice) {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+        
+        if (finalStatus !== 'granted') {
+          Alert.alert(
+            'Permission Required',
+            'Please enable notifications in Settings to receive reminders.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() }
+            ]
+          );
+          return;
+        }
+
+        // For Android, configure notification channel
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'JARVIS Reminders',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+            sound: 'default',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error setting up notifications:', error);
+    }
+  };
 
   const initializeChat = async () => {
     const id = await StorageService.getUserId();
@@ -67,6 +130,110 @@ export default function ChatScreen() {
     }
   };
 
+  // New method to handle alarm/reminder setting
+  const handleAlarmReminder = async (userMessage, intentResult) => {
+    try {
+      console.log(`🔔 Detected REMINDER intent with time: ${intentResult.time}`);
+      
+      // Parse the time string to create a proper Date object
+      const reminderTime = parseReminderTime(intentResult.time);
+      if (!reminderTime) {
+        throw new Error('Invalid time format received');
+      }
+
+      // Check if the reminder time is in the future
+      if (reminderTime <= new Date()) {
+        Alert.alert(
+          'Invalid Time',
+          'The reminder time must be in the future. Please try again with a future time.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Check if we're running in Expo Go
+      const isExpoGo = __DEV__ && !Device.isDevice;
+
+      // Save reminder locally
+      const reminderData = {
+        id: Date.now().toString(),
+        text: `Reminder: ${userMessage.text}`,
+        time: reminderTime.toISOString(),
+        originalText: userMessage.text,
+        confidence: intentResult.confidence,
+        scheduled: false,
+        notificationId: null,
+      };
+
+      await StorageService.saveLocalReminder(reminderData);
+
+      // Schedule notification
+      let notificationId = null;
+      let scheduleSuccess = false;
+
+      try {
+        if (Device.isDevice && !isExpoGo) {
+          notificationId = await scheduleNotification(reminderData);
+          scheduleSuccess = true;
+          
+          // Update reminder with notification ID
+          if (notificationId) {
+            reminderData.notificationId = notificationId;
+            reminderData.scheduled = true;
+            await StorageService.updateLocalReminder(reminderData.id, reminderData);
+          }
+        } else if (isExpoGo) {
+          console.warn('⚠️ Notifications not supported in Expo Go - reminder saved locally only');
+        }
+      } catch (notificationError) {
+        console.error('Failed to schedule notification:', notificationError);
+        scheduleSuccess = false;
+      }
+
+      // Show success alert
+      const alertTitle = scheduleSuccess ? '⏰ Reminder Set & Scheduled' : '⏰ Reminder Saved';
+      const alertMessage = scheduleSuccess 
+        ? `✅ I'll remind you: "${userMessage.text}" at ${reminderTime.toLocaleString()}\n\n🔔 Notification scheduled successfully!`
+        : isExpoGo
+        ? `✅ I've saved your reminder: "${userMessage.text}" for ${reminderTime.toLocaleString()}\n\n⚠️ Note: Running in Expo Go - notifications are not supported. Use a development build for full notification functionality.`
+        : `✅ I've saved your reminder: "${userMessage.text}" for ${reminderTime.toLocaleString()}\n\n⚠️ Note: Notification scheduling failed, but the reminder is saved.`;
+
+      Alert.alert(alertTitle, alertMessage, [{ text: 'OK' }]);
+
+      // Create assistant response message
+      const assistantMessage = {
+        id: (Date.now() + 1).toString(),
+        text: scheduleSuccess 
+          ? `✅ **Reminder set and scheduled for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n🔔 **You'll receive a notification at the scheduled time!**\n\n${Platform.OS === 'ios' ? '*For iOS: Make sure notifications are enabled in Settings > Notifications > Your App*' : '*For Android: Notification scheduled and will appear at the set time*'}`
+          : isExpoGo
+          ? `✅ **Reminder saved for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n⚠️ *Note: You're using Expo Go which doesn't support notifications. To get real push notifications, create a development build using:*\n\n\`npx expo run:android\` or \`npx expo run:ios\``
+          : `✅ **Reminder saved for ${reminderTime.toLocaleString()}**\n\nI've saved your reminder: "${userMessage.text}"\n\n⚠️ *Note: Notification scheduling failed, but the reminder is saved locally.*`,
+        isUser: false,
+        timestamp: new Date().toISOString(),
+        isLocalReminder: true,
+        reminderScheduled: scheduleSuccess,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      
+      // Save to storage
+      await StorageService.addMessageToHistory(userMessage);
+      await StorageService.addMessageToHistory(assistantMessage);
+
+    } catch (reminderError) {
+      console.error('Failed to save reminder:', reminderError);
+      
+      // Show error alert
+      Alert.alert(
+        'Reminder Failed',
+        `Sorry, I couldn't set your reminder: ${reminderError.message}`,
+        [{ text: 'OK' }]
+      );
+      
+      throw reminderError; // Re-throw to allow fallback in calling function
+    }
+  };
+
   const sendMessage = async () => {
     if (!inputText.trim() || loading) return;
 
@@ -81,6 +248,35 @@ export default function ChatScreen() {
     setInputText('');
     setLoading(true);
 
+    try {
+      // Step 1: Call intent classification first
+      const intentResult = await APIService.classifyIntent(userId, userMessage.text);
+      
+      if (intentResult.success && intentResult.intent === 'REMINDER' && intentResult.time && intentResult.confidence >= 0.8) {
+        // Handle REMINDER intent using dedicated method
+        try {
+          await handleAlarmReminder(userMessage, intentResult);
+        } catch (reminderError) {
+          console.error('Failed to handle reminder, falling back to normal chat:', reminderError);
+          // Fallback to normal chat if reminder fails
+          await handleNormalChat(userMessage);
+        }
+      } else {
+        // Step 2: For non-REMINDER or low confidence, use normal chat
+        await handleNormalChat(userMessage);
+      }
+
+    } catch (error) {
+      console.error('Intent classification failed, falling back to chat:', error);
+      // Fallback to normal chat if intent API fails
+      await handleNormalChat(userMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function for normal chat flow
+  const handleNormalChat = async (userMessage) => {
     try {
       const response = await APIService.sendMessage(
         userId,
@@ -112,8 +308,6 @@ export default function ChatScreen() {
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setLoading(false);
     }
   };
 

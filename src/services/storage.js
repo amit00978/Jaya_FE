@@ -10,6 +10,7 @@ const KEYS = {
   WEB_SEARCH_ENABLED: 'web_search_enabled',
   AUTO_PLAY_AUDIO: 'auto_play_audio',
   CONVERSATION_HISTORY: 'conversation_history',
+  LOCAL_REMINDERS: 'local_reminders',
 };
 
 class StorageService {
@@ -100,6 +101,65 @@ class StorageService {
     await AsyncStorage.multiRemove([
       KEYS.CONVERSATION_HISTORY,
     ]);
+  }
+
+  // Local reminders for intent-based scheduling
+  async getLocalReminders() {
+    try {
+      const reminders = await AsyncStorage.getItem(KEYS.LOCAL_REMINDERS);
+      return reminders ? JSON.parse(reminders) : [];
+    } catch (error) {
+      console.error('Error loading local reminders:', error);
+      return [];
+    }
+  }
+
+  async saveLocalReminder(reminder) {
+    try {
+      const reminders = await this.getLocalReminders();
+      const newReminder = {
+        id: Date.now().toString(),
+        text: reminder.text,
+        time: reminder.time,
+        originalText: reminder.originalText,
+        created: new Date().toISOString(),
+        ...reminder,
+      };
+      reminders.push(newReminder);
+      await AsyncStorage.setItem(KEYS.LOCAL_REMINDERS, JSON.stringify(reminders));
+      console.log('Saved local reminder:', newReminder);
+      return newReminder;
+    } catch (error) {
+      console.error('Error saving local reminder:', error);
+      throw error;
+    }
+  }
+
+  async removeLocalReminder(id) {
+    try {
+      const reminders = await this.getLocalReminders();
+      const filtered = reminders.filter(r => r.id !== id);
+      await AsyncStorage.setItem(KEYS.LOCAL_REMINDERS, JSON.stringify(filtered));
+    } catch (error) {
+      console.error('Error removing local reminder:', error);
+    }
+  }
+
+  async updateLocalReminder(id, updatedReminder) {
+    try {
+      const reminders = await this.getLocalReminders();
+      const index = reminders.findIndex(r => r.id === id);
+      if (index !== -1) {
+        reminders[index] = { ...reminders[index], ...updatedReminder };
+        await AsyncStorage.setItem(KEYS.LOCAL_REMINDERS, JSON.stringify(reminders));
+        console.log('Updated local reminder:', reminders[index]);
+        return reminders[index];
+      }
+      throw new Error('Reminder not found');
+    } catch (error) {
+      console.error('Error updating local reminder:', error);
+      throw error;
+    }
   }
 }
 

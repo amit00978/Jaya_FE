@@ -13,6 +13,8 @@ export const DEFAULT_API_URL = PRODUCTION_API_URL;
 
 export const API_ENDPOINTS = {
   CHAT: '/api/chat/',
+  // Intent classification endpoint
+  INTENT_CLASSIFY: '/api/intent/classify',
   CLEAR_HISTORY: (userId) => `/api/chat/history/${userId}`,
   HEALTH: '/health',
 };

@@ -16,7 +16,7 @@ class APIService {
   async initClient() {
     // Load saved API URL from storage
     try {
-      const savedURL = await AsyncStorage.getItem('api_url');
+      const savedURL = 'http://159.65.159.82:8001'; //await AsyncStorage.getItem('api_url');
       if (savedURL) {
         this.baseURL = savedURL;
       }
@@ -52,22 +52,25 @@ class APIService {
     try {
       await this.ensureInitialized();
       
-      console.log("========== Sending message to API ==========");
-      
       const requestData = {
-        user_id: 'user_123',
+        user_id: userId || 'user_123',
         text: text,
         use_web_search: useWebSearch,
         include_context: true,
+        // Enable intelligent routing for certain types of queries
+        use_intelligent_routing: this._shouldUseIntelligentRouting(text),
       };
-      
-      console.log("=============API URL:", this.baseURL + API_ENDPOINTS.CHAT);
-      console.log("=============Request data:", JSON.stringify(requestData, null, 2));
-      console.log("=============Headers:", this.client.defaults.headers);
-      
-      const response = await this.client.post(API_ENDPOINTS.CHAT, requestData);
 
-      console.log("========== Received response from API ==========", response.data);
+      console.log("========this client",this.client)
+
+      console.log("========== Sending message to API ==========");
+      console.log("Request data:", JSON.stringify(requestData, null, 2));
+
+      const response = await this.client.post(API_ENDPOINTS.CHAT, requestData);
+      
+      console.log("========== Received response from API ==========");
+      console.log("Response:", response.data);
+      
       return response.data;
     } catch (error) {
       console.error('Send message error:', error);
@@ -75,10 +78,38 @@ class APIService {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: error.response?.data,
-        config: error.config
       });
       throw this.handleError(error);
     }
+  }
+
+  _shouldUseIntelligentRouting(text) {
+    // Use intelligent routing for specific types of queries
+    const intelligentRoutingKeywords = [
+      // Math calculations
+      'calculate', 'math', 'percent', '%', 'multiply', 'divide', 'add', 'subtract',
+      'square root', 'power', '+', '-', '*', '/',
+      
+      // Device control
+      'turn on', 'turn off', 'lights', 'thermostat', 'temperature',
+      
+      // Reminders
+      'remind me', 'set alarm', 'wake me up',
+      
+      // Simple patterns that suggest math
+      /\d+\s*[+\-*/]\s*\d+/,
+      /\d+%/,
+      /what.*\d+.*\d+/
+    ];
+    
+    const textLower = text.toLowerCase();
+    
+    return intelligentRoutingKeywords.some(keyword => {
+      if (keyword instanceof RegExp) {
+        return keyword.test(textLower);
+      }
+      return textLower.includes(keyword);
+    });
   }
 
   async sendAudio(userId, audioBase64, useWebSearch = true) {
@@ -165,6 +196,46 @@ class APIService {
     } catch (error) {
       console.error("Test connection failed:", error);
       return { success: false, error: this.handleError(error) };
+    }
+  }
+
+  // Call intent classification endpoint
+  async classifyIntent(userId, text) {
+    try {
+      await this.ensureInitialized();
+
+      const requestData = {
+        user_id: userId || 'user_123',
+        text: text,
+      };
+
+      console.log('Calling intent classify API with:', requestData);
+      const response = await this.client.post(API_ENDPOINTS.INTENT_CLASSIFY, requestData);
+      console.log('Intent API response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Intent classify error:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Call intent classification endpoint
+  async classifyIntent(userId, text) {
+    try {
+      await this.ensureInitialized();
+
+      const requestData = {
+        user_id: userId || 'user_123',
+        text: text,
+      };
+
+      console.log('Calling intent classify API with:', requestData);
+      const response = await this.client.post(API_ENDPOINTS.INTENT_CLASSIFY, requestData);
+      console.log('Intent API response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Intent classify error:', error);
+      throw this.handleError(error);
     }
   }
 }
