@@ -33,8 +33,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "package": "com.anonymous.jivaMobileApp",
-      "googleServicesFile": "./android/app/google-services.json"
+      "package": "com.anonymous.jivaMobileApp"
     },
     "web": {
       "output": "static",
@@ -65,7 +64,17 @@
           "mode": "production"
         }
       ],
-      "@react-native-firebase/app"
+      [
+        "@react-native-firebase/app",
+        {
+          "android": {
+            "googleServicesFile": "./android/app/google-services.json"
+          },
+          "ios": {
+            "googleServicesFile": "./ios/GoogleService-Info.plist"
+          }
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true
