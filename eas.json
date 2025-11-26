@@ -4,15 +4,19 @@
   },
   "build": {
     "development": {
-      "extends": "development",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m1-medium"
+      }
     },
     "preview": {
-      "extends": "preview"
+      "distribution": "internal"
     },
     "production": {
-      "extends": "production"
+      "ios": {
+        "resourceClass": "m1-medium"
+      }
     }
   },
   "submit": {
