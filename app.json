@@ -18,7 +18,6 @@
       "bundleIdentifier": "com.anonymous.jivaMobileApp"
     },
     "android": {
-      "googleServicesFile": "./android/app/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -66,15 +65,7 @@
         }
       ],
       [
-        "@react-native-firebase/app",
-        {
-          "android": {
-            "googleServicesFile": "./android/app/google-services.json"
-          },
-          "ios": {
-            "googleServicesFile": "./ios/GoogleService-Info.plist"
-          }
-        }
+        "@react-native-firebase/app"
       ]
     ],
     "experiments": {
