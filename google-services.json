@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1050887650484",
+    "project_id": "jarvis-backend-dea61",
+    "storage_bucket": "jarvis-backend-dea61.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1050887650484:android:4da4371be86af0e3df6be1",
+        "android_client_info": {
+          "package_name": "com.anonymous.jivaMobileApp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0ePPUKLaCQtu5RCaDSanMuwF490Z8JFk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
