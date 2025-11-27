@@ -68,6 +68,8 @@
       [
         "@react-native-firebase/app"
       ]
+    ,
+      "./plugins/withNotificationMeta"
     ],
     "experiments": {
       "reactCompiler": true
